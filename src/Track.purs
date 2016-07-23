@@ -15,6 +15,7 @@ import Data.Profunctor.Choice (left)
 import Prelude (bind, show, ($), pure, const, class Show)
 import Pux (EffModel, noEffects)
 import Pux.Html (Html, div, span, button, text)
+import Pux.Router (link)
 import Pux.Html.Events (onClick)
 
 newtype Track = Track
@@ -86,6 +87,6 @@ view :: State -> Html Action
 view state =
   div
     []
-    [ button [ onClick (const (Connect serverInfo) ) ] [ text "Connect to database" ]
-    , span [] [ text (show state.track) ]
+    [ span [] [ text (show state.track) ]
+    , span [] [ link "/tracks/106521709" [] [ text "Track 106521709" ] ]
     ]

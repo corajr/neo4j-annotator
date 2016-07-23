@@ -1,12 +1,16 @@
 module App.Routes where
 
-import Data.Functor ((<$))
+import Data.Functor ((<$), (<$>))
+import Control.Apply ((<*), (*>))
 import Data.Maybe (fromMaybe)
 import Prelude (($))
-import Pux.Router (end, router)
+import Control.Alt ((<|>))
+import Pux.Router (end, router, lit, int)
 
-data Route = Home | NotFound
+data Route = Home | Track Int | NotFound
 
 match :: String -> Route
 match url = fromMaybe NotFound $ router url $
   Home <$ end
+  <|>
+  Track <$> (lit "tracks" *> int) <* end
