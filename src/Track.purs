@@ -48,7 +48,7 @@ init =
   , track: Left "Tracks not loaded"
   }
 
-update :: Action -> State -> EffModel State Action (db :: DB)
+update :: Action -> State -> EffModel State Action (neo4j :: NEO4J)
 update (Connect info) state =
   { state: state
   , effects: [ do

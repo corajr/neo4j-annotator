@@ -7,7 +7,7 @@ import Prelude (($), map)
 import Pux (EffModel, noEffects, mapState, mapEffects)
 import Pux.Html (Html, div, h1, p, text)
 
-import Database.Neo4J (DB)
+import Database.Neo4J (NEO4J)
 
 data Action
   = TrackAct (Track.Action)
@@ -22,7 +22,7 @@ init =
   { route: NotFound
   , track: Track.init }
 
-update :: Action -> State -> EffModel State Action (db :: DB)
+update :: Action -> State -> EffModel State Action (neo4j :: NEO4J)
 update (PageView route) state = noEffects $ state { route = route }
 update (TrackAct action) state =
   mapEffects TrackAct (mapState (state { track = _ }) $ Track.update action state.track)
