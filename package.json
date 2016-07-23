@@ -1,7 +1,7 @@
 {
   "name": "neo4j-annotator",
   "version": "0.0.1",
-  "description": "Neo4J",
+  "description": "Neo4J client for annotating a DB",
   "main": "support/index.js",
   "keywords": [
     "neo4j",

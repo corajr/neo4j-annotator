@@ -1,10 +1,7 @@
 {
-  "name": "pux-starter-app",
-  "homepage": "https://github.com/alexmingoia/pux-starter-app",
-  "authors": [
-    "Alex Mingoia <talk@alexmingoia.com>"
-  ],
-  "description": "Starter Pux application using webpack with hot-reloading.",
+  "name": "neo4j-annotator",
+  "homepage": "https://github.com/corajr/neo4j-annotator",
+  "description": "Neo4J client for annotating a DB",
   "main": "support/index.js",
   "license": "BSD3",
   "dependencies": {
