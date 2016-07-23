@@ -1,6 +1,7 @@
 module App.Track where
 
 import Database.Neo4J
+import App.Effects (AppEffects)
 import App.Secrets (neo4Jpassword)
 import Control.Monad.Aff (attempt)
 import Control.Monad.Eff.Class (liftEff)
@@ -48,7 +49,7 @@ init =
   , track: Left "Tracks not loaded"
   }
 
-update :: Action -> State -> EffModel State Action (neo4j :: NEO4J)
+update :: Action -> State -> EffModel State Action AppEffects
 update (Connect info) state =
   { state: state
   , effects: [ do

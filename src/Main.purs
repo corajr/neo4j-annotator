@@ -1,5 +1,6 @@
 module Main where
 
+import App.Effects (AppEffects)
 import App.Routes (match)
 import App.Layout (Action(PageView), State, view, update)
 import Control.Bind ((=<<))
@@ -11,12 +12,8 @@ import Pux.Devtool (Action, start) as Pux.Devtool
 import Pux.Router (sampleUrl)
 import Signal ((~>))
 
-import Database.Neo4J (NEO4J)
-
-type AppEffects = (dom :: DOM, neo4j :: NEO4J)
-
 -- | App configuration
--- config :: forall eff. State -> Eff (dom :: DOM | eff) (Config State Action AppEffects)
+config :: forall eff. State -> Eff (dom :: DOM | eff) (Config State Action AppEffects)
 config state = do
   -- | Create a signal of URL changes.
   urlSignal <- sampleUrl
