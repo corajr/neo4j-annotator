@@ -16,6 +16,7 @@ var config = {
     filename: '[name].js',
     publicPath: '/'
   },
+  externals: { ws: "WebSocket" },
   module: {
     loaders: [
       { test: /\.js$/, loader: 'source-map-loader', exclude: /node_modules|bower_components/ },
