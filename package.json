@@ -1,13 +1,11 @@
 {
-  "name": "pux-starter-app",
-  "version": "8.0.0",
-  "description": "Starter Pux application using webpack with hot-reloading.",
+  "name": "neo4j-annotator",
+  "version": "0.0.1",
+  "description": "Neo4J",
   "main": "support/index.js",
   "keywords": [
-    "pux",
-    "purescript-pux",
-    "boilerplate",
-    "starter-app"
+    "neo4j",
+    "annotation"
   ],
   "scripts": {
     "postinstall": "bower cache clean && bower install",
@@ -20,12 +18,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/alexmingoia/pux-starter-app.git"
+    "url": "git://github.com/corajr/neo4j-annotator.git"
   },
-  "author": "Alexander C. Mingoia",
+  "author": "Cora Johnson-Roberson",
   "license": "BSD-3-Clause",
   "bugs": {
-    "url": "https://github.com/alexmingoia/pux-starter-app/issues"
+    "url": "https://github.com/corajr/neo4j-annotator/issues"
   },
   "dependencies": {
     "bower": "^1.7.9",
