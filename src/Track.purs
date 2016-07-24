@@ -12,14 +12,14 @@ import Data.Foreign.Generic (readGeneric)
 import Data.Generic (class Generic, gEq, gShow)
 import Data.Maybe (maybe)
 import Data.Profunctor.Choice (left)
-import Prelude (bind, show, ($), pure, const, class Show)
+import Prelude (bind, show, ($), pure, const, (<<<), class Show)
 import Pux (EffModel, noEffects)
 import Pux.Html (Html, div, span, button, text)
 import Pux.Router (link)
 import Pux.Html.Events (onClick)
 
 newtype Track = Track
-  { id :: Int
+  { id :: NeoInteger
   , title :: String
   , description :: String
   , tag_list :: String
@@ -27,12 +27,22 @@ newtype Track = Track
   }
 
 derive instance genericTrack :: Generic Track
-
 instance showTrack :: Show Track where
   show = gShow
-
 instance isForeignTrack :: IsForeign Track where
   read = readGeneric defaultForeignOptions
+
+newtype TrackRec = TrackRec
+  { n :: Node Track }
+
+derive instance genericTrackRec :: Generic TrackRec
+instance showTrackRec :: Show TrackRec where
+  show = gShow
+instance isForeignTrackRec :: IsForeign TrackRec where
+  read = readGeneric defaultForeignOptions
+
+fromTrackRec :: TrackRec -> Track
+fromTrackRec (TrackRec {n: (Node node)}) = node.properties
 
 data Action = Connect ConnectionInfo
             | Connected (Either String Driver)
@@ -74,10 +84,10 @@ update (Fetch trackId) state =
       Right driver -> [ do
         track <- attempt $ withSession driver $ \session ->
           withTransaction session $ do
-            query (Query "MATCH (n:Track) WHERE n.id = {id} RETURN n" :: Query Track) (mkParams {id: trackId})
+            query (Query "MATCH (n:Track) WHERE n.id = {id} RETURN n" :: Query TrackRec) (mkParams {id: trackId})
         pure (ReceiveTrack $ case track of
           Left err -> Left (show err)
-          Right tracks -> maybe (Left "No tracks returned") Right (head tracks))
+          Right tracks -> maybe (Left "No tracks returned") (Right <<< fromTrackRec) (head tracks))
       ]
   }
 update (ReceiveTrack track) state =
