@@ -51,8 +51,9 @@ var AudioPlayer = React.createClass({
   },
 
   render: function() {
+    var that = this;
     return (
-      React.createElement("audio", {preload: "none", controls: true, ref: (ref) => this.audioEl = ref},
+      React.createElement("audio", {preload: "none", controls: true, ref: function (ref) { that.audioEl = ref; return ref;}},
                           React.createElement("source", {src: this.props.source + ".mp3"}),
                           React.createElement("source", {src: this.props.source + ".wav"})
                          )

@@ -208,7 +208,10 @@ viewTrackEmbed uri =
 --     ]
 
 viewTrackAudio :: Int -> Html Action
-viewTrackAudio trackID = fromReact [ Attr.attr "source" ("http://127.0.0.1:8080/" <> show trackID)] []
+viewTrackAudio trackID =
+  fromReact [ Attr.attr "source" ("http://127.0.0.1:8080/" <> show trackID)
+            , Attr.attr "isPlaying" true]
+            []
 
 viewTrack :: Either String Track -> Html Action
 viewTrack eitherTrack =
