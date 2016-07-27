@@ -9,16 +9,16 @@ import Control.Monad.Aff (Aff, attempt)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Data.Array (head)
-import Data.List (List(..), (:))
 import Data.Either (Either(..), either)
 import Data.Foreign.Class (class IsForeign)
 import Data.Foreign.Generic (readGeneric)
 import Data.Generic (class Generic, gShow)
+import Data.List (List(..), (:))
 import Data.Maybe (maybe)
 import Data.Profunctor.Choice (left)
-import Prelude (bind, show, ($), pure, (<$>), (*>), const, (>), (-), (<>), (<<<), unit, map, class Show)
+import Prelude (bind, show, ($), pure, (<$>), (*>), const, (>), (-), (<>), (<<<), unit, Unit, map, class Show)
 import Pux (noEffects, EffModel)
-import Pux.Html (Html, div, span, dl, dt, dd, ul, li, button, text)
+import Pux.Html (Html, Attribute, div, span, dl, dt, dd, ul, li, button, text)
 import Pux.Html.Attributes (title, href)
 import Pux.Html.Events (onClick)
 import Pux.Router (link, navigateTo)
@@ -52,7 +52,7 @@ data Action = Connect ConnectionInfo
             | OpenSession
             | GetTrackList
             | Fetch Int
-            | SetProps Int { isBallroomTrack :: Boolean }
+            | SetProps Int Properties
             | MoveToNextTrack
             | Connected (Either String Driver)
             | SessionOpened (Either String Session)
@@ -61,6 +61,9 @@ data Action = Connect ConnectionInfo
             | SetStatus String
             | RunQueue
             | NoOp
+
+data Properties = IsBallroom { props :: { isBallroomTrack :: Boolean} }
+                | ContainsHa { props :: { containsHa :: Boolean } }
 
 type State =
   { driver :: Either String Driver
@@ -152,8 +155,9 @@ update (ReceiveTrackList tracks) state =
   }
 update org@(SetProps trackId props) state =
   withDB org state $ \session ->
-    [ do withTransaction session $ do
-           execute (Query "MATCH (n:Track {id: {trackId}}) SET n += {props}") (mkParams {trackId: toNeoInt trackId, props: props})
+    [ do case props of
+           ContainsHa { props } -> withTransaction session $ setProps trackId props
+           IsBallroom { props } -> withTransaction session $ setProps trackId props
          pure GetTrackList
     ]
 update org@(Fetch trackId) state =
@@ -170,6 +174,11 @@ update (ReceiveTrack track) state =
   noEffects $ state { track = track }
 update (SetStatus s) state = noEffects $ state { status = s }
 update NoOp state = noEffects $ state
+
+
+setProps :: forall eff a. Int -> a -> InTransaction eff Unit
+setProps trackId props =
+  execute (Query "MATCH (n:Track {id: {trackId}}) SET n += {props}") (mkParams {trackId: toNeoInt trackId, props: props })
 
 viewTrackDetails :: Track -> Html Action
 viewTrackDetails (Track { id, title, description, tag_list, permalink_url }) =
@@ -191,6 +200,16 @@ viewTrackEmbed :: String -> Html Action
 viewTrackEmbed uri =
   El.iframe [ Attr.src ("https://w.soundcloud.com/player/?url=" <> encodeURIComponent uri) ] []
 
+-- viewTrackAudio :: Int -> Html Action
+-- viewTrackAudio trackID =
+--   El.audio [ Attr.controls true, Attr.id_ ("track" <> show trackID) ]
+--     [ El.source [ Attr.src ("http://127.0.0.1:8080/" <> show trackID <> ".mp3") ] []
+--     , El.source [ Attr.src ("http://127.0.0.1:8080/" <> show trackID <> ".wav") ] []
+--     ]
+
+viewTrackAudio :: Int -> Html Action
+viewTrackAudio trackID = fromReact [ Attr.attr "source" ("http://127.0.0.1:8080/" <> show trackID)] []
+
 viewTrack :: Either String Track -> Html Action
 viewTrack eitherTrack =
   div [] $
@@ -199,10 +218,12 @@ viewTrack eitherTrack =
       Right track@(Track rec) ->
         let trackID = unsafeFromNeoInt rec.id
         in [ viewTrackDetails track
-           , viewTrackEmbed rec.uri
-           , button [ onClick (const (SetProps trackID { isBallroomTrack: false})) ] [ text "Not ballroom"]
-           , button [ onClick (const (SetProps trackID { isBallroomTrack: true})) ] [ text "Ballroom"]
-           , button [ onClick (const MoveToNextTrack) ] [ text "Next"]
+           -- , viewTrackEmbed rec.uri
+           , viewTrackAudio trackID
+           , div [] [ button [ onClick (const (SetProps trackID (ContainsHa {props: { containsHa: true}})))] [ text "Contains Ha"] ]
+           , div [] [ button [ onClick (const (SetProps trackID (IsBallroom {props: { isBallroomTrack: false}}))) ] [ text "Not ballroom"]
+                    , button [ onClick (const (SetProps trackID (IsBallroom {props: { isBallroomTrack: true}}))) ] [ text "Ballroom"]
+                    ]
            ]
 
 viewTrackList :: Either String (Array TrackSummary) -> Html Action
@@ -223,3 +244,8 @@ view state =
     , viewTrack state.track
     , viewTrackList state.trackList
     ]
+
+foreign import fromReact :: forall a.
+                            Array (Attribute a) ->
+                            Array (Html a) ->
+                            Html a
