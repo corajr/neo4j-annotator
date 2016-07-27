@@ -1,28 +1,35 @@
 module App.Track where
 
 import Database.Neo4J
+import Pux.Html.Attributes as Attr
+import Pux.Html.Elements as El
 import App.Effects (AppEffects)
 import App.Secrets (neo4Jpassword)
-import Control.Monad.Aff (attempt)
+import Control.Monad.Aff (Aff, attempt)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Exception (EXCEPTION)
 import Data.Array (head)
-import Data.Either (either, Either(..))
-import Data.Foreign.Class (class IsForeign, read)
+import Data.List (List(..), (:))
+import Data.Either (Either(..), either)
+import Data.Foreign.Class (class IsForeign)
 import Data.Foreign.Generic (readGeneric)
-import Data.Generic (class Generic, gEq, gShow)
+import Data.Generic (class Generic, gShow)
 import Data.Maybe (maybe)
 import Data.Profunctor.Choice (left)
-import Prelude (bind, show, ($), pure, const, (<<<), class Show)
-import Pux (EffModel, noEffects)
-import Pux.Html (Html, div, span, button, text)
-import Pux.Router (link)
+import Prelude (bind, show, ($), pure, (<$>), (*>), const, (>), (-), (<>), (<<<), unit, map, class Show)
+import Pux (noEffects, EffModel)
+import Pux.Html (Html, div, span, dl, dt, dd, ul, li, button, text)
+import Pux.Html.Attributes (title, href)
 import Pux.Html.Events (onClick)
+import Pux.Router (link, navigateTo)
+import Signal.Channel (CHANNEL)
 
 newtype Track = Track
   { id :: NeoInteger
   , title :: String
   , description :: String
   , tag_list :: String
+  , uri :: String
   , permalink_url :: String
   }
 
@@ -32,32 +39,48 @@ instance showTrack :: Show Track where
 instance isForeignTrack :: IsForeign Track where
   read = readGeneric defaultForeignOptions
 
-newtype TrackRec = TrackRec
-  { n :: Node Track }
+newtype TrackSummary = TrackSummary
+  { trackID :: NeoInteger, title :: String }
 
-derive instance genericTrackRec :: Generic TrackRec
-instance showTrackRec :: Show TrackRec where
+derive instance genericTrackSummary :: Generic TrackSummary
+instance showTrackSummary :: Show TrackSummary where
   show = gShow
-instance isForeignTrackRec :: IsForeign TrackRec where
+instance isForeignTrackSummary :: IsForeign TrackSummary where
   read = readGeneric defaultForeignOptions
 
-fromTrackRec :: TrackRec -> Track
-fromTrackRec (TrackRec {n: (Node node)}) = node.properties
-
 data Action = Connect ConnectionInfo
-            | Connected (Either String Driver)
+            | OpenSession
+            | GetTrackList
             | Fetch Int
+            | SetProps Int { isBallroomTrack :: Boolean }
+            | MoveToNextTrack
+            | Connected (Either String Driver)
+            | SessionOpened (Either String Session)
             | ReceiveTrack (Either String Track)
+            | ReceiveTrackList (Either String (Array TrackSummary))
+            | SetStatus String
+            | RunQueue
+            | NoOp
 
 type State =
   { driver :: Either String Driver
+  , session :: Either String Session
+  , trackList :: Either String (Array TrackSummary)
   , track :: Either String Track
+  , retries :: Int -- once retries are exhausted, don't try to connect anymore
+  , status :: String
+  , queuedActions :: List Action
   }
 
 init :: State
 init =
   { driver: Left "Not connected to server"
-  , track: Left "Tracks not loaded"
+  , session: Left "No session started"
+  , track: Left "Track not loaded"
+  , trackList: Left "Tracklist not loaded"
+  , retries: 3
+  , status: ""
+  , queuedActions: Nil
   }
 
 serverInfo :: ConnectionInfo
@@ -65,6 +88,20 @@ serverInfo = ConnectionInfo
   { url: "bolt://localhost"
   , auth: mkAuth "neo4j" neo4Jpassword
   , connectionOpts: defaultConnectionOptions
+  }
+
+withDB :: Action -> State -> (Session -> Array (Aff (channel :: CHANNEL, err :: EXCEPTION | AppEffects) Action)) -> EffModel State Action AppEffects
+withDB originalAction state f = case state.session of
+  Left _ -> if state.retries > 0
+            then { state: state { retries = state.retries - 1, queuedActions = originalAction: state.queuedActions}
+                 , effects: [ pure (Connect serverInfo) ] }
+            else { state: state, effects: [] }
+  Right session -> { state: state, effects: f session }
+
+infoFromSummary :: TrackSummary -> { url :: String, title :: String}
+infoFromSummary (TrackSummary {trackID: (NeoInteger trackID'), title: title}) =
+  { url: "/tracks/" <> show trackID'.low
+  , title: title
   }
 
 update :: Action -> State -> EffModel State Action AppEffects
@@ -75,28 +112,114 @@ update (Connect info) state =
        pure $ Connected (left show driver)
     ]
   }
-update (Connected driver) state =
-  noEffects $ state { driver = driver }
-update (Fetch trackId) state =
-  { state: state
-  , effects: case state.driver of
-      Left err -> [ ]
-      Right driver -> [ do
-        track <- attempt $ withSession driver $ \session ->
-          withTransaction session $ do
-            query (Query "MATCH (n:Track) WHERE n.id = {id} RETURN n" :: Query TrackRec) (mkParams {id: trackId})
-        pure (ReceiveTrack $ case track of
-          Left err -> Left (show err)
-          Right tracks -> maybe (Left "No tracks returned") (Right <<< fromTrackRec) (head tracks))
-      ]
+update OpenSession state =
+  case state.driver of
+    Left _ -> noEffects state
+    Right driver ->
+      { state: state
+      , effects: [ do session <- attempt $ liftEff (mkSession driver)
+                      pure $ SessionOpened (left show session)
+                 ]
+      }
+update (SessionOpened session) state =
+  { state: state {session = session, queuedActions = GetTrackList:state.queuedActions }
+  , effects: [ pure RunQueue ]
   }
+update (Connected driver) state =
+  { state: state { driver = driver }
+  , effects: [ pure OpenSession ]
+  }
+update RunQueue state =
+  case state.queuedActions of
+    x:xs -> { state: state { queuedActions = xs }, effects: [ pure x, pure RunQueue ]}
+    Nil -> noEffects state
+update GetTrackList state =
+  withDB GetTrackList state $ \session ->
+    [ do tracks <- attempt $
+           withTransaction session $ do
+             query' (Query "MATCH (a:Track) WHERE NOT exists(a.isBallroomTrack) RETURN a.id as trackID, a.title as title" :: Query TrackSummary)
+         pure (ReceiveTrackList $ left show tracks)
+    ]
+update MoveToNextTrack state =
+  { state: state
+  , effects: case state.trackList of
+      Left _ -> []
+      Right tracks -> maybe [] ((\({ url }) -> [ liftEff (navigateTo url) *> pure NoOp]) <<< infoFromSummary) (head tracks)
+    }
+update (ReceiveTrackList tracks) state =
+  { state: state { trackList = tracks }
+  , effects: [ pure MoveToNextTrack ]
+  }
+update org@(SetProps trackId props) state =
+  withDB org state $ \session ->
+    [ do withTransaction session $ do
+           execute (Query "MATCH (n:Track {id: {trackId}}) SET n += {props}") (mkParams {trackId: toNeoInt trackId, props: props})
+         pure GetTrackList
+    ]
+update org@(Fetch trackId) state =
+  withDB org state $ \session ->
+    [ do track <- attempt $
+           withTransaction session $ do
+             query (Query "MATCH (x:Track) WHERE x.id = {id} RETURN x" :: Query' (Node Track)) (mkParams {id: trackId})
+         pure (ReceiveTrack $
+                 either (Left <<< show)
+                        (\tracks -> maybe (Left "No tracks returned") (Right <<< getProperties <<< unbox) (head tracks))
+                        track)
+    ]
 update (ReceiveTrack track) state =
   noEffects $ state { track = track }
+update (SetStatus s) state = noEffects $ state { status = s }
+update NoOp state = noEffects $ state
+
+viewTrackDetails :: Track -> Html Action
+viewTrackDetails (Track { id, title, description, tag_list, permalink_url }) =
+  dl [] [ dt [] [ text "ID" ]
+        , dd [] [ text (show (unsafeFromNeoInt id)) ]
+        , dt [] [ text "Title" ]
+        , dd [] [ text title ]
+        , dt [] [ text "Description" ]
+        , dd [] [ text description ]
+        , dt [] [ text "Tags" ]
+        , dd [] [ text tag_list ]
+        , dt [] [ text "URL" ]
+        , dd [] [ El.a [ href permalink_url ] [ text permalink_url ] ]
+        ]
+
+foreign import encodeURIComponent :: String -> String
+
+viewTrackEmbed :: String -> Html Action
+viewTrackEmbed uri =
+  El.iframe [ Attr.src ("https://w.soundcloud.com/player/?url=" <> encodeURIComponent uri) ] []
+
+viewTrack :: Either String Track -> Html Action
+viewTrack eitherTrack =
+  div [] $
+    case eitherTrack of
+      Left err -> [ span [] [ text (show err) ] ]
+      Right track@(Track rec) ->
+        let trackID = unsafeFromNeoInt rec.id
+        in [ viewTrackDetails track
+           , viewTrackEmbed rec.uri
+           , button [ onClick (const (SetProps trackID { isBallroomTrack: false})) ] [ text "Not ballroom"]
+           , button [ onClick (const (SetProps trackID { isBallroomTrack: true})) ] [ text "Ballroom"]
+           , button [ onClick (const MoveToNextTrack) ] [ text "Next"]
+           ]
+
+viewTrackList :: Either String (Array TrackSummary) -> Html Action
+viewTrackList tracks =
+  div [] $
+    case tracks of
+      Left err -> [ span [] [ text (show err) ] ]
+      Right tracks ->
+        [ ul [] $
+            map ((\({ url, title}) -> li [] [ link url [] [ text title ] ]) <<< infoFromSummary) tracks
+        ]
 
 view :: State -> Html Action
 view state =
   div
     []
-    [ span [] [ text (show state.track) ]
-    , span [] [ link "/tracks/106521709" [] [ text "Track 106521709" ] ]
+    [ div [] [ text state.status ]
+    , viewTrack state.track
+    , viewTrackList state.trackList
     ]
