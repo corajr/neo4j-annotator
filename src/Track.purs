@@ -10,11 +10,12 @@ import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Data.Array (head)
 import Data.Either (Either(..), either)
-import Data.Foreign.Class (class IsForeign)
+import Data.Foreign.NullOrUndefined (NullOrUndefined(..), unNullOrUndefined)
+import Data.Foreign.Class (class IsForeign, read, readProp)
 import Data.Foreign.Generic (readGeneric)
 import Data.Generic (class Generic, gShow)
 import Data.List (List(..), (:))
-import Data.Maybe (maybe)
+import Data.Maybe (maybe, fromMaybe)
 import Data.Profunctor.Choice (left)
 import Prelude (bind, show, ($), pure, (<$>), (*>), const, (>), (-), (<>), (<<<), unit, Unit, map, class Show)
 import Pux (noEffects, EffModel)
@@ -27,17 +28,21 @@ import Signal.Channel (CHANNEL)
 newtype Track = Track
   { id :: NeoInteger
   , title :: String
-  , description :: String
+  , description :: NullOrUndefined String
   , tag_list :: String
   , uri :: String
   , permalink_url :: String
   }
 
-derive instance genericTrack :: Generic Track
-instance showTrack :: Show Track where
-  show = gShow
 instance isForeignTrack :: IsForeign Track where
-  read = readGeneric defaultForeignOptions
+  read value = do
+    id_ <- readProp "id" value
+    title <- readProp "title" value
+    description <- readProp "description" value
+    tag_list <- readProp "tag_list" value
+    uri <- readProp "uri" value
+    permalink_url <- readProp "permalink_url" value
+    pure $ Track { id: id_, title: title, description: description, tag_list: tag_list, uri: uri, permalink_url: permalink_url }
 
 newtype TrackSummary = TrackSummary
   { trackID :: NeoInteger, title :: String }
@@ -187,7 +192,7 @@ viewTrackDetails (Track { id, title, description, tag_list, permalink_url }) =
         , dt [] [ text "Title" ]
         , dd [] [ text title ]
         , dt [] [ text "Description" ]
-        , dd [] [ text description ]
+        , dd [] [ text (fromMaybe "" (unNullOrUndefined description)) ]
         , dt [] [ text "Tags" ]
         , dd [] [ text tag_list ]
         , dt [] [ text "URL" ]
